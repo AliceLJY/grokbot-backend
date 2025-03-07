@@ -24,7 +24,18 @@ namespace GrokBot.Api.Controllers
         {
             try
             {
-                _logger.LogInformation("Received chat request from: {Origin}", Request.Headers["Origin"]);
+                var origin = Request.Headers["Origin"].ToString();
+                _logger.LogInformation("Received chat request from: {Origin}", origin);
+                
+                if (chat == null || chat.Messages == null || !chat.Messages.Any())
+                {
+                    _logger.LogWarning("Received invalid chat request: chat is null or has no messages");
+                    return BadRequest(new { error = "Invalid chat data", message = "Chat must contain at least one message" });
+                }
+                
+                // 记录请求详情以便调试
+                _logger.LogInformation("Chat request - ID: {ChatId}, Messages: {MessageCount}", 
+                    chat.Id, chat.Messages.Count);
                 
                 var response = await _grokService.GetChatResponseAsync(chat);
                 
@@ -35,11 +46,35 @@ namespace GrokBot.Api.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error getting chat response");
-                return StatusCode(500, new { error = "Internal server error", message = ex.Message });
+                
+                // 提供更详细的错误信息
+                var errorDetails = new
+                {
+                    error = "Internal server error",
+                    message = ex.Message,
+                    stackTrace = ex.StackTrace,
+                    innerError = ex.InnerException?.Message
+                };
+                
+                return StatusCode(500, errorDetails);
             }
         }
         
-        // 添加一个简单的测试端点
+        // 添加一个健康检查端点
+        [HttpGet("health")]
+        [EnableCors("AllowAll")]
+        public IActionResult Health()
+        {
+            return Ok(new { 
+                status = "healthy", 
+                message = "Grok API is running", 
+                time = DateTime.UtcNow,
+                environment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production",
+                version = "1.0.1"
+            });
+        }
+        
+        // 测试端点
         [HttpGet("test")]
         [EnableCors("AllowAll")]
         public IActionResult Test()
@@ -48,7 +83,8 @@ namespace GrokBot.Api.Controllers
                 status = "ok", 
                 message = "Grok API is running", 
                 time = DateTime.UtcNow,
-                request_origin = Request.Headers["Origin"].ToString() 
+                request_origin = Request.Headers["Origin"].ToString(),
+                cors_enabled = true
             });
         }
         
@@ -57,6 +93,9 @@ namespace GrokBot.Api.Controllers
         [EnableCors("AllowAll")]
         public IActionResult ChatOptions()
         {
+            Response.Headers.Add("Access-Control-Allow-Origin", "*");
+            Response.Headers.Add("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+            Response.Headers.Add("Access-Control-Allow-Headers", "Content-Type, Authorization");
             return Ok();
         }
     }
