@@ -81,16 +81,17 @@ else
     app.UseDeveloperExceptionPage();
 }
 
-// 应用CORS
-app.UseCors();
-
-// 应用路由
+// 重要：正确的中间件顺序
+// 首先应用路由
 app.UseRouting();
+
+// 然后应用CORS - 必须在 UseRouting 和 MapControllers 之间
+app.UseCors();
 
 // 添加健康检查终结点
 app.MapGet("/health", () => Results.Ok(new { Status = "Healthy", Timestamp = DateTime.UtcNow }));
 
-// 映射控制器
+// 映射控制器 (相当于 UseEndpoints)
 app.MapControllers();
 
 // 输出环境信息
