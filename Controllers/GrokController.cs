@@ -7,6 +7,8 @@ namespace GrokBot.Api.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    // 在控制器级别应用CORS，确保所有动作都已启用
+    [EnableCors("AllowAll")]
     public class GrokController : ControllerBase
     {
         private readonly GrokService _grokService;
@@ -19,7 +21,6 @@ namespace GrokBot.Api.Controllers
         }
 
         [HttpPost("chat")]
-        [EnableCors("AllowAll")]  // 使用宽松的CORS策略以确保请求能成功
         public async Task<IActionResult> GetChatResponse([FromBody] Chat chat)
         {
             try
@@ -62,7 +63,6 @@ namespace GrokBot.Api.Controllers
         
         // 添加一个健康检查端点
         [HttpGet("health")]
-        [EnableCors("AllowAll")]
         public IActionResult Health()
         {
             return Ok(new { 
@@ -76,7 +76,6 @@ namespace GrokBot.Api.Controllers
         
         // 测试端点
         [HttpGet("test")]
-        [EnableCors("AllowAll")]
         public IActionResult Test()
         {
             return Ok(new { 
@@ -90,9 +89,10 @@ namespace GrokBot.Api.Controllers
         
         // 处理预检请求
         [HttpOptions("chat")]
-        [EnableCors("AllowAll")]
         public IActionResult ChatOptions()
         {
+            // 实际上我们不需要手动添加这些头部，因为CORS中间件会处理它们
+            // 保留这些代码以确保所有跨域预检请求都能得到正确响应
             Response.Headers.Add("Access-Control-Allow-Origin", "*");
             Response.Headers.Add("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
             Response.Headers.Add("Access-Control-Allow-Headers", "Content-Type, Authorization");
