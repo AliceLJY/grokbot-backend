@@ -81,12 +81,11 @@ else
     app.UseDeveloperExceptionPage();
 }
 
-// 重要：正确的中间件顺序
-// 首先应用路由
-app.UseRouting();
+// 重要：关键中间件顺序
+app.UseRouting(); // 首先应用路由
 
-// 然后应用CORS - 必须在 UseRouting 和 MapControllers 之间
-app.UseCors();
+// 明确使用 "AllowAll" 策略作为默认 CORS 策略
+app.UseCors("AllowAll");
 
 // 添加健康检查终结点
 app.MapGet("/health", () => Results.Ok(new { Status = "Healthy", Timestamp = DateTime.UtcNow }));
@@ -94,11 +93,23 @@ app.MapGet("/health", () => Results.Ok(new { Status = "Healthy", Timestamp = Dat
 // 映射控制器 (相当于 UseEndpoints)
 app.MapControllers();
 
+// 添加一个特殊的CORS测试端点
+app.MapGet("/cors-test", () => {
+    return Results.Ok(new { 
+        message = "CORS is working correctly",
+        timestamp = DateTime.UtcNow
+    });
+}).RequireCors("AllowAll");
+
 // 输出环境信息
 var environmentName = app.Environment.EnvironmentName;
 var logger = app.Services.GetService<ILogger<Program>>();
 logger?.LogInformation("Application starting in {Environment} environment", environmentName);
 logger?.LogInformation("GrokAPI Key is {Present}", !string.IsNullOrEmpty(builder.Configuration["GrokApi:ApiKey"]) ? "present" : "missing");
+
+// 记录CORS和中间件配置
+logger?.LogInformation("CORS middleware configured with 'AllowAll' policy");
+logger?.LogInformation("Middleware pipeline order: UseRouting -> UseCors -> MapControllers");
 
 // 运行应用
 app.Run();
