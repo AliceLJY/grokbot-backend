@@ -1,74 +1,103 @@
 using GrokBot.Api.Services;
+using Microsoft.AspNetCore.Diagnostics;
+using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+// 添加控制器
 builder.Services.AddControllers();
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
 
-// Add HttpClient for GrokService
-builder.Services.AddHttpClient<GrokService>();
-builder.Services.AddScoped<GrokService>();
+// 允许更大的JSON请求体大小
+builder.Services.AddControllers().AddJsonOptions(options =>
+{
+    options.JsonSerializerOptions.PropertyNamingPolicy = JsonNamingPolicy.CamelCase;
+});
 
-// Add CORS
+// 增加请求体大小限制
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.Limits.MaxRequestBodySize = 10 * 1024 * 1024; // 10 MB
+});
+
+// 配置CORS
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowGitHubPages", policy =>
+    // 默认CORS策略
+    options.AddDefaultPolicy(policy =>
     {
-        policy.WithOrigins(
-                "https://aliceljy.github.io",
-                "https://aliceljy.github.io/grokbot")
-              .AllowAnyMethod()
-              .AllowAnyHeader();
-    });
-
-    options.AddPolicy("AllowLocalhost", policy =>
-    {
-        policy.WithOrigins(
-                "http://localhost:5173", 
-                "http://localhost:5000", 
-                "http://localhost:5500",
-                "https://localhost:5173",
-                "https://localhost:5000", 
-                "https://localhost:5500")
-              .AllowAnyMethod()
-              .AllowAnyHeader();
+        policy.AllowAnyOrigin()
+              .AllowAnyHeader()
+              .AllowAnyMethod();
     });
     
+    // 更宽松的CORS策略，用于需要特殊处理的端点
     options.AddPolicy("AllowAll", policy =>
     {
         policy.AllowAnyOrigin()
+              .AllowAnyHeader()
               .AllowAnyMethod()
-              .AllowAnyHeader();
+              .WithExposedHeaders("Content-Disposition", "Content-Length");
     });
 });
 
+// 添加日志
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+builder.Logging.AddDebug();
+
+// 添加HttpClient服务
+builder.Services.AddHttpClient();
+builder.Services.AddSingleton<GrokService>();
+
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
+// 在生产环境中使用异常处理
+if (app.Environment.IsProduction())
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
-    app.UseCors("AllowLocalhost");
+    app.UseExceptionHandler(errorApp =>
+    {
+        errorApp.Run(async context =>
+        {
+            context.Response.StatusCode = 500;
+            context.Response.ContentType = "application/json";
+            
+            var exceptionHandlerPathFeature = context.Features.Get<IExceptionHandlerPathFeature>();
+            var exception = exceptionHandlerPathFeature?.Error;
+            
+            var result = JsonSerializer.Serialize(new 
+            { 
+                error = "Internal Server Error",
+                message = exception?.Message,
+                path = context.Request.Path
+            });
+            
+            await context.Response.WriteAsync(result);
+        });
+    });
 }
 else
 {
-    // 在生产环境中使用更宽松的CORS策略以确保跨域请求能够成功
-    app.UseCors("AllowAll");
+    // 开发环境中显示详细错误
+    app.UseDeveloperExceptionPage();
 }
 
-// 禁用HTTPS重定向，避免混合内容问题
-// app.UseHttpsRedirection();
-app.UseAuthorization();
+// 应用CORS
+app.UseCors();
+
+// 应用路由
+app.UseRouting();
+
+// 添加健康检查终结点
+app.MapGet("/health", () => Results.Ok(new { Status = "Healthy", Timestamp = DateTime.UtcNow }));
+
+// 映射控制器
 app.MapControllers();
 
-// 打印环境信息，帮助调试
-Console.WriteLine($"Environment: {app.Environment.EnvironmentName}");
-Console.WriteLine($"ContentRoot: {app.Environment.ContentRootPath}");
-Console.WriteLine($"WebRootPath: {builder.Environment.WebRootPath ?? "Not Set"}");
-Console.WriteLine($"ASPNETCORE_URLS: {Environment.GetEnvironmentVariable("ASPNETCORE_URLS") ?? "Not Set"}");
-Console.WriteLine($"GrokApi__ApiKey: {(string.IsNullOrEmpty(builder.Configuration["GrokApi:ApiKey"]) ? "Not Set" : "Is Set")}");
+// 输出环境信息
+var environmentName = app.Environment.EnvironmentName;
+var logger = app.Services.GetService<ILogger<Program>>();
+logger?.LogInformation("Application starting in {Environment} environment", environmentName);
+logger?.LogInformation("GrokAPI Key is {Present}", !string.IsNullOrEmpty(builder.Configuration["GrokApi:ApiKey"]) ? "present" : "missing");
 
+// 运行应用
 app.Run();
