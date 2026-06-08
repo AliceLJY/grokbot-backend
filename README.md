@@ -1,3 +1,5 @@
+> **[Archived]** This repository is no longer maintained and is kept for history only.
+
 # GrokBot 后端 API
 
 这是 GrokBot 应用的后端 API。它充当前端和 Grok AI API 之间的代理。
