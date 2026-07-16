@@ -16,7 +16,6 @@ namespace GrokBot.Api.Services
         private readonly string _apiUrl = "https://api.x.ai/v1/chat/completions";
         private readonly string _model = "grok-2-1212";
         private readonly int _timeoutSeconds = 60; // 延长超时时间
-        private int _retryCount = 0;
         private const int MAX_RETRIES = 2;
 
         public GrokService(HttpClient httpClient, IConfiguration configuration, ILogger<GrokService> logger)
@@ -32,15 +31,14 @@ namespace GrokBot.Api.Services
 
         public async Task<string> GetChatResponseAsync(Chat chat)
         {
-            _retryCount = 0;
-            return await ExecuteWithRetryAsync(chat);
+            return await ExecuteWithRetryAsync(chat, 0);
         }
         
-        private async Task<string> ExecuteWithRetryAsync(Chat chat)
+        private async Task<string> ExecuteWithRetryAsync(Chat chat, int retryCount)
         {
             try
             {
-                _logger.LogInformation("Sending chat request (Attempt: {AttemptCount})", _retryCount + 1);
+                _logger.LogInformation("Sending chat request (Attempt: {AttemptCount})", retryCount + 1);
                 
                 var messages = chat.Messages.Select(m => new
                 {
@@ -60,20 +58,16 @@ namespace GrokBot.Api.Services
                 var jsonString = JsonSerializer.Serialize(requestData);
                 var content = new StringContent(jsonString, Encoding.UTF8, "application/json");
                 
-                _logger.LogDebug("Request payload: {RequestData}", jsonString);
-                
                 // 设置取消令牌以支持超时
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(_timeoutSeconds));
                 
-                var response = await _httpClient.PostAsync(_apiUrl, content, cts.Token);
+                using var response = await _httpClient.PostAsync(_apiUrl, content, cts.Token);
                 
                 _logger.LogInformation("API Response Status: {StatusCode}", response.StatusCode);
 
                 if (response.IsSuccessStatusCode)
                 {
                     var responseText = await response.Content.ReadAsStringAsync();
-                    _logger.LogDebug("API Raw Response: {RawResponse}", responseText);
-
                     try
                     {
                         var responseData = JsonSerializer.Deserialize<JsonElement>(responseText);
@@ -85,31 +79,30 @@ namespace GrokBot.Api.Services
                             return content_text.GetString() ?? "No response content";
                         }
                         
-                        _logger.LogWarning("Could not extract content from response: {Response}", responseText);
+                        _logger.LogWarning("Could not extract content from successful API response");
                         return "Sorry, I couldn't generate a response.";
                     }
                     catch (JsonException ex)
                     {
-                        _logger.LogError(ex, "JSON parsing error with response: {Response}", responseText);
-                        return $"Error parsing API response: {ex.Message}";
+                        _logger.LogError(ex, "JSON parsing error");
+                        return "Error parsing API response.";
                     }
                 }
                 else
                 {
-                    var errorContent = await response.Content.ReadAsStringAsync();
-                    _logger.LogError("API Error: {StatusCode}, Content: {ErrorContent}", response.StatusCode, errorContent);
+                    _logger.LogError("API Error: {StatusCode}", response.StatusCode);
                     
                     // 尝试重试请求
-                    if (_retryCount < MAX_RETRIES && ((int)response.StatusCode >= 500 || (int)response.StatusCode == 429))
+                    if (retryCount < MAX_RETRIES && ((int)response.StatusCode >= 500 || (int)response.StatusCode == 429))
                     {
-                        _retryCount++;
-                        _logger.LogInformation("Retrying request... Attempt {RetryCount} of {MaxRetries}", _retryCount, MAX_RETRIES);
+                        var nextRetry = retryCount + 1;
+                        _logger.LogInformation("Retrying request... Attempt {RetryCount} of {MaxRetries}", nextRetry, MAX_RETRIES);
                         
                         // 增加延迟，避免立即重试，对于429错误增加更长延迟
-                        var delayMs = (int)response.StatusCode == 429 ? 2000 * _retryCount : 1000 * _retryCount;
+                        var delayMs = (int)response.StatusCode == 429 ? 2000 * nextRetry : 1000 * nextRetry;
                         await Task.Delay(delayMs);
                         
-                        return await ExecuteWithRetryAsync(chat);
+                        return await ExecuteWithRetryAsync(chat, nextRetry);
                     }
                     
                     // 提供更友好的错误信息
@@ -122,12 +115,12 @@ namespace GrokBot.Api.Services
                 _logger.LogWarning("Request timed out after {TimeoutSeconds} seconds", _timeoutSeconds);
                 
                 // 尝试重试超时请求
-                if (_retryCount < MAX_RETRIES)
+                if (retryCount < MAX_RETRIES)
                 {
-                    _retryCount++;
-                    _logger.LogInformation("Retrying after timeout... Attempt {RetryCount} of {MaxRetries}", _retryCount, MAX_RETRIES);
-                    await Task.Delay(1000 * _retryCount);
-                    return await ExecuteWithRetryAsync(chat);
+                    var nextRetry = retryCount + 1;
+                    _logger.LogInformation("Retrying after timeout... Attempt {RetryCount} of {MaxRetries}", nextRetry, MAX_RETRIES);
+                    await Task.Delay(1000 * nextRetry);
+                    return await ExecuteWithRetryAsync(chat, nextRetry);
                 }
                 
                 return "请求超时。这可能是因为Grok API响应时间较长或Render.com的免费服务正在启动中。";
@@ -137,12 +130,12 @@ namespace GrokBot.Api.Services
                 _logger.LogError(ex, "HTTP request error");
                 
                 // 尝试重试网络错误
-                if (_retryCount < MAX_RETRIES)
+                if (retryCount < MAX_RETRIES)
                 {
-                    _retryCount++;
-                    _logger.LogInformation("Retrying after network error... Attempt {RetryCount} of {MaxRetries}", _retryCount, MAX_RETRIES);
-                    await Task.Delay(1000 * _retryCount);
-                    return await ExecuteWithRetryAsync(chat);
+                    var nextRetry = retryCount + 1;
+                    _logger.LogInformation("Retrying after network error... Attempt {RetryCount} of {MaxRetries}", nextRetry, MAX_RETRIES);
+                    await Task.Delay(1000 * nextRetry);
+                    return await ExecuteWithRetryAsync(chat, nextRetry);
                 }
                 
                 return "网络连接错误，无法连接到Grok API。请检查您的网络连接并稍后再试。";
@@ -151,12 +144,7 @@ namespace GrokBot.Api.Services
             {
                 _logger.LogError(ex, "Unexpected error calling Grok API");
                 
-                if (ex.InnerException != null)
-                {
-                    _logger.LogError("Inner exception: {InnerExceptionMessage}", ex.InnerException.Message);
-                }
-                
-                return $"发生意外错误: {ex.Message}";
+                return "发生意外错误，请稍后再试。";
             }
         }
     }

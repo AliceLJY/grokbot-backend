@@ -10,8 +10,7 @@ COPY --from=build /app/publish .
 EXPOSE 80
 EXPOSE 443
 
-# 为环境变量创建默认值，但允许在运行时覆盖
+# Archived image: no credentials are baked into the image.
 ENV ASPNETCORE_URLS=http://+:80
-ENV GrokApi__ApiKey=xai-5xUXPInpGKyQZBFH0EsBz5tjW6TJOUmByMeXhzYhw0BPpFNGw0fOoXmyJ2zA9slmZx4I8O5Uj7sT5DLP
 
 ENTRYPOINT ["dotnet", "GrokBot.Api.dll"]

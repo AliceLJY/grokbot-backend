@@ -1,26 +1,20 @@
-> **[Archived]** This repository is no longer maintained and is kept for history only.
+> **[Archived / offline]** This repository is retained as a historical artifact. The hosted AI proxy is being retired, the chat endpoint now returns HTTP 410, and no API credential belongs in this repository or image.
 
 # GrokBot 后端 API
 
-这是 GrokBot 应用的后端 API。它充当前端和 Grok AI API 之间的代理。
+这是 GrokBot 早期演示的后端源码。它曾充当前端和 Grok AI API 之间的代理，现在不再提供在线 AI 转发能力。
 
-## 部署到 Render.com (使用Docker)
+## 当前状态
 
-1. 在 Render.com 上创建一个新的 Web 服务
-2. 连接您的 GitHub 仓库
-3. 选择适当的分支
-4. 配置服务：
-   - 名称：`grokbot-backend`
-   - **环境：`Docker`**
-   - 不需要额外的构建命令（Dockerfile已包含所有需要的构建步骤）
-5. 添加下列环境变量（如需覆盖Dockerfile中的默认值）：
-   - 键：`GrokApi__ApiKey`
-   - 值：您的 Grok API 密钥
+- `POST /api/grok/chat` 固定返回 HTTP 410，不会调用任何模型供应商。
+- `GET /health` 和 `GET /api/grok/health` 只报告归档状态。
+- Docker 镜像和 tracked 配置不再包含 API key。
+- 不要把本仓重新部署为公开、无认证的模型代理；需要类似能力时，应另建带认证、限流、费用上限和最小 CORS allowlist 的服务。
 
 ## 环境变量
 
-- `GrokApi__ApiKey`: 您的 Grok API 密钥（已设置在Dockerfile中，但可以通过环境变量覆盖）
 - `ASPNETCORE_URLS`: 应用程序监听的URL（默认为http://+:80）
+- `Cors__AllowedOrigins`: 逗号分隔的允许来源；默认只允许本地开发来源。
 
 ## 本地开发
 
@@ -38,4 +32,4 @@
 3. 构建Docker镜像：`docker build -t grokbot-backend .`
 4. 运行容器：`docker run -p 8080:80 grokbot-backend`
 
-API 将在 `http://localhost:8080` 上可用。
+归档状态 API 将在 `http://localhost:8080` 上可用；聊天端点不会转发请求。
